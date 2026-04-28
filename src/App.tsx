@@ -50,6 +50,7 @@ export default function App() {
   const [adminPin, setAdminPin] = useState(() => localStorage.getItem('aoh_admin_pin') || '7324');
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [bookingModal, setBookingModal] = useState<{ roomId: number; editId?: string } | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isWalking, setIsWalking] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
@@ -148,6 +149,8 @@ export default function App() {
 
   const triggerBooking = (roomId: number) => {
     setIsWalking(true);
+    setBookingPurpose('');
+    setSelectedDate(null);
     setTimeout(() => {
       setIsWalking(false);
       setBookingModal({ roomId });
@@ -492,7 +495,11 @@ export default function App() {
                           {(booking.email === currentUser.email || currentUser.email === 'admin@iltexas.org') ? (
                             <div className="flex items-center gap-2">
                               <button 
-                                onClick={() => setBookingModal({ roomId: booking.roomId, editId: booking.id })}
+                                onClick={() => {
+                                  setBookingPurpose(booking.purpose || '');
+                                  setSelectedDate(booking.date);
+                                  setBookingModal({ roomId: booking.roomId, editId: booking.id });
+                                }}
                                 className="p-1.5 text-gray-400 hover:text-maroon hover:bg-red-50 rounded transition-colors"
                               >
                                 <Edit2 className="w-4 h-4" />
@@ -593,10 +600,27 @@ export default function App() {
                   <BookingCalendar 
                     roomId={bookingModal.roomId}
                     currentBookings={allBookings}
+                    selectedDate={selectedDate}
                     onSelect={(date) => {
-                      addBooking(bookingModal.roomId, date, bookingModal.editId);
+                      setSelectedDate(date);
                     }}
                   />
+                </div>
+
+                <div className="pt-2">
+                  <Button 
+                    variant="primary" 
+                    className="w-full py-6 text-base shadow-xl"
+                    disabled={!selectedDate || !bookingPurpose.trim()}
+                    onClick={() => {
+                      if (selectedDate) {
+                        addBooking(bookingModal.roomId, selectedDate, bookingModal.editId);
+                      }
+                    }}
+                  >
+                    <CheckCircle2 className="w-5 h-5" />
+                    {bookingModal.editId ? 'Save Changes' : 'Confirm Reservation'}
+                  </Button>
                 </div>
               </div>
             </motion.div>
@@ -781,7 +805,7 @@ const RoomCard: React.FC<RoomCardProps> = ({ name, bookings, onBook }) => {
   );
 }
 
-function BookingCalendar({ roomId, currentBookings, onSelect }: { roomId: number; currentBookings: Booking[]; onSelect: (date: string) => void }) {
+function BookingCalendar({ roomId, currentBookings, selectedDate, onSelect }: { roomId: number; currentBookings: Booking[]; selectedDate?: string | null; onSelect: (date: string) => void }) {
   const [viewDate, setViewDate] = useState(new Date());
   
   const days = getMonthDays(viewDate);
@@ -813,6 +837,7 @@ function BookingCalendar({ roomId, currentBookings, onSelect }: { roomId: number
           const dKey = formatDateKey(day);
           const bookable = isDateBookable(day);
           const booked = currentBookings.some(b => b.date === dKey && b.roomId === roomId);
+          const isSelected = selectedDate === dKey;
           const isToday = isSameDay(day, now);
           const isCurrentMonth = isSameMonth(day, viewDate);
 
@@ -826,19 +851,20 @@ function BookingCalendar({ roomId, currentBookings, onSelect }: { roomId: number
               className={cn(
                 "aspect-square rounded-lg flex flex-col items-center justify-center transition-all relative border border-transparent",
                 !bookable || booked ? "opacity-30 cursor-not-allowed" : 
+                isSelected ? "bg-maroon text-white border-maroon shadow-lg scale-105" :
                 "bg-white hover:border-maroon/20 hover:bg-maroon/5 active:scale-95 shadow-sm",
-                isToday && "border-[2px] border-maroon scale-105 shadow-md z-10"
+                isToday && !isSelected && "border-[2px] border-maroon scale-105 shadow-md z-10"
               )}
             >
               <span className={cn(
                 "text-[11px] font-black mb-0.5",
-                booked ? "text-red-400" : "text-navy",
-                isToday && "text-maroon"
+                isSelected ? "text-white" : booked ? "text-red-400" : "text-navy",
+                isToday && !isSelected && "text-maroon"
               )}>
                 {day.getDate()}
               </span>
 
-              {isCurrentMonth && bookable && (
+              {isCurrentMonth && bookable && !isSelected && (
                 <div className="w-1.5 h-1.5 rounded-full overflow-hidden mb-0.5">
                   {booked ? (
                     <div className="w-full h-full bg-red-600 animate-sharp shadow-[0_0_5px_#dc2626]" />
@@ -859,6 +885,7 @@ function BookingCalendar({ roomId, currentBookings, onSelect }: { roomId: number
             const dKey = formatDateKey(day);
             const bookable = isDateBookable(day);
             const booked = currentBookings.some(b => b.date === dKey && b.roomId === roomId);
+            const isSelected = selectedDate === dKey;
 
             return (
               <button
@@ -866,23 +893,27 @@ function BookingCalendar({ roomId, currentBookings, onSelect }: { roomId: number
                 disabled={!bookable || booked}
                 onClick={() => onSelect(dKey)}
                 className={cn(
-                  "aspect-square rounded-lg flex flex-col items-center justify-center transition-all relative border border-gray-100 bg-white hover:border-maroon/20 hover:bg-maroon/5 shadow-sm active:scale-95",
-                  booked && "bg-red-50/50 border-transparent"
+                  "aspect-square rounded-lg flex flex-col items-center justify-center transition-all relative border border-gray-100",
+                  isSelected ? "bg-maroon border-maroon shadow-lg scale-105" :
+                  "bg-white hover:border-maroon/20 hover:bg-maroon/5 shadow-sm active:scale-95",
+                  booked && !isSelected && "bg-red-50/50 border-transparent"
                 )}
               >
                 <span className={cn(
                   "text-[10px] font-black mb-0.5",
-                  booked ? "text-red-500" : "text-navy opacity-70"
+                  isSelected ? "text-white" : booked ? "text-red-500" : "text-navy opacity-70"
                 )}>
                   {day.getDate()}
                 </span>
-                <div className="w-1.5 h-1.5 rounded-full overflow-hidden mb-0.5">
-                  {booked ? (
-                    <div className="w-full h-full bg-red-600 animate-sharp shadow-[0_0_5px_#dc2626]" />
-                  ) : (
-                    <div className="w-full h-full bg-green-500 animate-led shadow-[0_0_5px_#22c55e]" />
-                  )}
-                </div>
+                {!isSelected && (
+                  <div className="w-1.5 h-1.5 rounded-full overflow-hidden mb-0.5">
+                    {booked ? (
+                      <div className="w-full h-full bg-red-600 animate-sharp shadow-[0_0_5px_#dc2626]" />
+                    ) : (
+                      <div className="w-full h-full bg-green-500 animate-led shadow-[0_0_5px_#22c55e]" />
+                    )}
+                  </div>
+                )}
               </button>
             );
           })}

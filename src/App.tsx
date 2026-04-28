@@ -94,9 +94,12 @@ export default function App() {
       snapshot.forEach((doc) => {
         bookings.push({ id: doc.id, ...doc.data() } as Booking);
       });
+      console.log(`Synced ${bookings.length} bookings`);
       setAllBookings(bookings);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'bookings');
+      console.error("Sync error:", error);
+      // Don't throw here to avoid crashing the whole component, just alert
+      alert("Real-time sync error. Please refresh the page. " + error.message);
     });
 
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -223,7 +226,10 @@ export default function App() {
   const deleteBooking = async (id: string, firstName: string, lastName: string, email: string) => {
     if (!currentUser) return;
     const booking = allBookings.find(b => b.id === id);
-    if (!booking) return;
+    if (!booking) {
+      alert("Booking not found in local state. It might have been already deleted.");
+      return;
+    }
 
     // Ensure we have an auth session for deletion if rules require isSignedIn()
     if (!auth.currentUser) {
@@ -232,7 +238,7 @@ export default function App() {
       } catch (error: unknown) {
         const fbError = error as { code?: string };
         if (fbError.code === 'auth/admin-restricted-operation') {
-          alert("Database Access Error: Anonymous Authentication must be enabled in the Firebase Console (Authentication > Sign-in method) to allow cancelling reservations.");
+          alert("Database Access Error: Anonymous Authentication must be enabled.");
           return;
         }
       }
@@ -252,11 +258,16 @@ export default function App() {
         setShowSuccess(true);
         setTimeout(() => setShowSuccess(false), 2000);
       } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, `bookings/${id}`);
+        console.error("Delete failed:", error);
+        alert("Failed to delete reservation. Please check your connection and try again.");
       }
     } else {
       alert("Verification details do not match the original reservation.");
     }
+  };
+
+  const manualRefresh = () => {
+    window.location.reload();
   };
 
   const resetDatabase = async () => {
@@ -381,6 +392,13 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            <button 
+              onClick={manualRefresh}
+              className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors flex items-center gap-1"
+            >
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              Connected • Sync Now
+            </button>
             <div className="flex items-center gap-3 bg-gray-50 p-1.5 pr-4 rounded-full border border-gray-100">
               <div className="w-8 h-8 bg-maroon text-white rounded-full flex items-center justify-center font-bold text-xs">
                 {currentUser.firstName[0]}{currentUser.lastName[0]}

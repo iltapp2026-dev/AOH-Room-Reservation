@@ -99,12 +99,12 @@ export default function App() {
 
     // Listen for Bookings
     const q = query(collection(db, 'bookings'), orderBy('date', 'asc'));
-    const unsubscribeBookings = onSnapshot(q, (snapshot) => {
+    const unsubscribeBookings = onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
       const bookings: Booking[] = [];
       snapshot.forEach((doc) => {
         bookings.push({ id: doc.id, ...doc.data() } as Booking);
       });
-      console.log(`Synced ${bookings.length} bookings at ${new Date().toLocaleTimeString()}`);
+      console.log(`Synced ${bookings.length} bookings at ${new Date().toLocaleTimeString()} (Source: ${snapshot.metadata.fromCache ? 'Cache' : 'Server'})`);
       setAllBookings(bookings);
       setSyncTime(new Date());
     }, (error) => {
@@ -850,7 +850,7 @@ const RoomCard: React.FC<RoomCardProps> = ({ id, name, bookings, onBook }) => {
                   {currentMonth && !past && (
                     <div className="w-1.5 h-1.5 rounded-full overflow-hidden mb-0.5">
                       {booked ? (
-                        <div className="w-full h-full bg-red-500 animate-sharp shadow-[0_0_5px_#ef4444]" />
+                        <div className="w-full h-full bg-red-500 animate-reserved shadow-[0_0_5px_#ef4444]" />
                       ) : (
                         <div className="w-full h-full bg-green-400 animate-led shadow-[0_0_5px_#4ade80]" />
                       )}
@@ -870,7 +870,7 @@ const RoomCard: React.FC<RoomCardProps> = ({ id, name, bookings, onBook }) => {
                   <span className="text-[10px] font-black text-navy opacity-50 mb-0.5">{day.getDate()}</span>
                   <div className="w-1.5 h-1.5 rounded-full overflow-hidden mb-0.5">
                     {booked ? (
-                      <div className="w-full h-full bg-red-500 animate-sharp opacity-80 shadow-[0_0_5px_#ef4444]" />
+                      <div className="w-full h-full bg-red-500 animate-reserved opacity-80 shadow-[0_0_5px_#ef4444]" />
                     ) : (
                       <div className="w-full h-full bg-green-400 animate-led opacity-80 shadow-[0_0_5px_#4ade80]" />
                     )}
@@ -887,7 +887,7 @@ const RoomCard: React.FC<RoomCardProps> = ({ id, name, bookings, onBook }) => {
             <span className="text-[9px] font-black uppercase text-[#A2ABB8] tracking-widest">AVAILABLE</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-red-500 animate-sharp" />
+            <div className="w-2 h-2 rounded-full bg-red-500 animate-reserved" />
             <span className="text-[9px] font-black uppercase text-[#A2ABB8] tracking-widest">RESERVED</span>
           </div>
         </div>
@@ -976,7 +976,7 @@ function BookingCalendar({ roomId, currentBookings, selectedDate, onSelect }: { 
               {isCurrentMonth && bookable && !isSelected && (
                 <div className="w-1.5 h-1.5 rounded-full overflow-hidden mb-0.5">
                   {booked ? (
-                    <div className="w-full h-full bg-red-600 animate-sharp shadow-[0_0_5px_#dc2626]" />
+                    <div className="w-full h-full bg-red-600 animate-reserved shadow-[0_0_5px_#dc2626]" />
                   ) : (
                     <div className="w-full h-full bg-green-500 animate-led shadow-[0_0_5px_#22c55e]" />
                   )}
@@ -1017,7 +1017,7 @@ function BookingCalendar({ roomId, currentBookings, selectedDate, onSelect }: { 
                 {!isSelected && (
                   <div className="w-1.5 h-1.5 rounded-full overflow-hidden mb-0.5">
                     {booked ? (
-                      <div className="w-full h-full bg-red-600 animate-sharp shadow-[0_0_5px_#dc2626]" />
+                      <div className="w-full h-full bg-red-600 animate-reserved shadow-[0_0_5px_#dc2626]" />
                     ) : (
                       <div className="w-full h-full bg-green-500 animate-led shadow-[0_0_5px_#22c55e]" />
                     )}
@@ -1036,7 +1036,7 @@ function BookingCalendar({ roomId, currentBookings, selectedDate, onSelect }: { 
             <span className="text-[9px] font-black uppercase tracking-widest text-[#A2ABB8]">Available</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-red-600 animate-sharp shadow-[0_0_5px_#dc2626]" />
+            <div className="w-2 h-2 rounded-full bg-red-600 animate-reserved shadow-[0_0_5px_#dc2626]" />
             <span className="text-[9px] font-black uppercase tracking-widest text-[#A2ABB8]">Reserved</span>
           </div>
         </div>

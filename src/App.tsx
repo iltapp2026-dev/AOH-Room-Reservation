@@ -192,6 +192,7 @@ export default function App() {
       firstName: currentUser.firstName,
       lastName: currentUser.lastName,
       purpose: bookingPurpose,
+      creatorUid: auth.currentUser?.uid,
       updatedAt: serverTimestamp(),
     };
 

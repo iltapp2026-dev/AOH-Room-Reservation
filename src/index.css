@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --color-maroon: #7B1113;
+  --color-maroon-dark: #5C0D0F;
+  --color-navy: #1B365D;
+  --color-navy-light: #264a73;
+  
+  --radius-xl: 14px;
+  --radius-lg: 10px;
+}
+
+@layer base {
+  body {
+    background-color: #f3f4f6;
+    color: #1a1a2e;
+  }
+}
+
+@keyframes led-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 2px #22c55e); }
+  50% { opacity: 0.4; transform: scale(1.2); filter: drop-shadow(0 0 10px #22c55e); }
+}
+
+@keyframes sharp-blink {
+  0%, 45% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes alert-soft-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-led {
+  animation: led-pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-sharp {
+  animation: sharp-blink 1.2s step-end infinite;
+}
+
+.animate-alert-slow {
+  animation: alert-soft-blink 8s ease-in-out infinite;
+}
+

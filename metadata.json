@@ -1,0 +1,6 @@
+{
+  "name": "AOH Reservation System",
+  "description": "Conference Room Reservation System for the Area Office featuring live availability, admin controls, and custom booking animations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

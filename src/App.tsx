@@ -55,11 +55,22 @@ export default function App() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [syncTime, setSyncTime] = useState<Date | null>(null);
   const [bookingPurpose, setBookingPurpose] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Initialization
   useEffect(() => {
+    // Restore user from locale storage
+    const savedUser = localStorage.getItem('aoh_user');
+    if (savedUser) {
+      try {
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error("Failed to restore user:", e);
+      }
+    }
+
     const initAuth = async () => {
       // If we don't have a user, try to sign in anonymously
       // This is required for Firestore to allow writes under the 'isSignedIn()' rule
@@ -94,8 +105,9 @@ export default function App() {
       snapshot.forEach((doc) => {
         bookings.push({ id: doc.id, ...doc.data() } as Booking);
       });
-      console.log(`Synced ${bookings.length} bookings`);
+      console.log(`Synced ${bookings.length} bookings at ${new Date().toLocaleTimeString()}`);
       setAllBookings(bookings);
+      setSyncTime(new Date());
     }, (error) => {
       console.error("Sync error:", error);
       // Don't throw here to avoid crashing the whole component, just alert
@@ -392,12 +404,19 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            <div className="hidden sm:flex flex-col items-end mr-2">
+              <div className="flex items-center gap-1.5">
+                <div className={cn("w-1.5 h-1.5 rounded-full", syncTime ? "bg-green-500 animate-pulse" : "bg-gray-300")} />
+                <span className="text-[10px] font-bold text-navy opacity-50 uppercase tracking-widest">
+                  {syncTime ? `Linked • ${format(syncTime, 'h:mm:ss a')}` : 'Connecting...'}
+                </span>
+              </div>
+            </div>
             <button 
               onClick={manualRefresh}
               className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors flex items-center gap-1"
             >
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              Connected • Sync Now
+              Sync Now
             </button>
             <div className="flex items-center gap-3 bg-gray-50 p-1.5 pr-4 rounded-full border border-gray-100">
               <div className="w-8 h-8 bg-maroon text-white rounded-full flex items-center justify-center font-bold text-xs">

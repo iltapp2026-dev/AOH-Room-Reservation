@@ -59,13 +59,20 @@ export default function App() {
 
   // Initialization
   useEffect(() => {
-    // Ensure we have an anonymous session for Firestore connectivity
     const initAuth = async () => {
+      // If we don't have a user, try to sign in anonymously
+      // This is required for Firestore to allow writes under the 'isSignedIn()' rule
       if (!auth.currentUser) {
         try {
           await signInAnonymously(auth);
-        } catch (error) {
-          console.error("Auth initialization error:", error);
+        } catch (error: unknown) {
+          const fbError = error as { code?: string };
+          // If Anonymous Auth is disabled in the console, we'll get 'admin-restricted-operation'
+          if (fbError.code === 'auth/admin-restricted-operation') {
+            console.warn("Anonymous Authentication is disabled in Firebase console. Please enable it in Authentication > Sign-in method.");
+          } else {
+            console.error("Auth initialization error:", error);
+          }
         }
       }
     };
@@ -159,9 +166,18 @@ export default function App() {
 
   const addBooking = async (roomId: number, date: string, editId?: string) => {
     if (!currentUser) return;
+    
+    // We try to ensure an anonymous session is active for the write operation
     if (!auth.currentUser) {
-      alert("System initializing... please try again in a second.");
-      return;
+      try {
+        await signInAnonymously(auth);
+      } catch (error: unknown) {
+        const fbError = error as { code?: string };
+        if (fbError.code === 'auth/admin-restricted-operation') {
+          alert("Database Access Error: Anonymous Authentication must be enabled in the Firebase Console (Authentication > Sign-in method) to allow bookings.");
+          return;
+        }
+      }
     }
 
     if (!bookingPurpose.trim()) {

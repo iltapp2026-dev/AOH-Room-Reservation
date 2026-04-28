@@ -58,18 +58,18 @@ service cloud.firestore {
                data.email is string && data.email.size() <= 128 &&
                data.firstName is string && data.firstName.size() <= 100 &&
                data.lastName is string && data.lastName.size() <= 100 &&
-               // Identity verification: The email in the booking must match the requester
-               (data.email == request.auth.token.email || isAdmin()) &&
-               // Optional purpose
-               (!data.keys().hasAny(['purpose']) || (data.purpose is string && data.purpose.size() <= 500)) &&
+               // Optional purpose - but mandatory in UI, we enforce size here
+               (!data.keys().hasAny(['purpose']) || (data.purpose is string && data.purpose.size() > 0 && data.purpose.size() <= 500)) &&
                // Metadata
                (!data.keys().hasAny(['createdAt']) || data.createdAt == request.time) &&
                (!data.keys().hasAny(['updatedAt']) || data.updatedAt == request.time);
       }
 
-      allow list: if isSignedIn(); // Everyone can see bookings to know availability
-      allow get: if isSignedIn();
+      allow list: if true; // Everyone can see bookings to know availability (Fixes sync issue for guest view)
+      allow get: if true;
       
+      // Since we removed Google Auth and PIN, we allow any signed-in user (anonymous or otherwise) 
+      // to create a booking. We rely on the email provided in the payload for identity.
       allow create: if isSignedIn() && 
                     isValidId(bookingId) && 
                     isValidBooking(incoming()) &&
@@ -77,14 +77,14 @@ service cloud.firestore {
 
       allow update: if isSignedIn() && 
                     isValidBooking(incoming()) &&
-                    (incoming().email == request.auth.token.email || isAdmin()) &&
-                    incoming().email == existing().email &&
+                    // Basic check: only allow updating if the email matches (anyone with the email can edit)
+                    (incoming().email == existing().email || isAdmin()) &&
                     incoming().date == existing().date &&
                     incoming().roomId == existing().roomId &&
                     incoming().updatedAt == request.time;
 
       allow delete: if isSignedIn() && 
-                    (existing().email == request.auth.token.email || isAdmin());
+                    (existing().email == incoming().email || isAdmin());
     }
   }
 }

@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { User, Booking, ROOMS } from './types';
 import { format, isPast, isSameDay, isSameMonth } from 'date-fns';
-import { LogIn, ShieldCheck, LogOut, Settings, Calendar as CalendarIcon, User as UserIcon, Trash2, Edit2, CheckCircle2, ChevronRight, X, Mail } from 'lucide-react';
+import { LogIn, ShieldCheck, LogOut, Settings, Calendar as CalendarIcon, User as UserIcon, Trash2, Edit2, CheckCircle2, ChevronRight, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
-import { getMonthDays, getNextMonthFirstWeek, formatDateKey, formatDisplayDate, formatFullDate, isDateBookable } from './lib/dateUtils';
+import { getMonthDays, getNextMonthFirstWeek, formatDateKey, formatDisplayDate, isDateBookable } from './lib/dateUtils';
 import { db, auth } from './lib/firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp, query, orderBy, getDoc } from 'firebase/firestore';
-import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { onAuthStateChanged, signOut, signInAnonymously } from 'firebase/auth';
 import { handleFirestoreError, OperationType } from './lib/firestoreUtils';
 
 // --- Components ---
@@ -22,14 +22,20 @@ const Button = ({ className, variant = 'primary', ...props }: React.ButtonHTMLAt
   return <button className={cn(variants[variant], 'inline-flex items-center justify-center gap-2', className)} {...props} />;
 };
 
-const Input = ({ label, error, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label?: string; error?: string }) => (
+const Input = ({ label, required, error, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label?: string; required?: boolean; error?: string }) => (
   <div className="space-y-1 w-full">
-    {label && <label className="text-xs font-bold uppercase tracking-wider text-navy opacity-70 ml-1">{label}</label>}
+    {label && (
+      <label className="text-xs font-bold uppercase tracking-wider text-navy opacity-70 ml-1">
+        {label}
+        {required && <span className="text-red-500 ml-1">*</span>}
+      </label>
+    )}
     <input 
       className={cn(
         "w-full h-11 px-4 rounded-lg bg-gray-50 border-2 border-gray-200 focus:border-maroon focus:bg-white outline-none transition-all placeholder:text-gray-400 font-medium",
         error && "border-red-500"
       )} 
+      required={required}
       {...props} 
     />
     {error && <p className="text-[10px] text-red-500 font-bold uppercase ml-1">{error}</p>}
@@ -41,55 +47,34 @@ const Input = ({ label, error, ...props }: React.InputHTMLAttributes<HTMLInputEl
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [allBookings, setAllBookings] = useState<Booking[]>([]);
-  const [allUsers, setAllUsers] = useState<Record<string, User>>({});
-  const [adminPin, setAdminPin] = useState('7324');
+  const [adminPin, setAdminPin] = useState(() => localStorage.getItem('aoh_admin_pin') || '7324');
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [bookingModal, setBookingModal] = useState<{ roomId: number; editId?: string } | null>(null);
   const [isWalking, setIsWalking] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [selectedRoomIdx, setSelectedRoomIdx] = useState(0);
   const [bookingPurpose, setBookingPurpose] = useState('');
 
   // Initialization
   useEffect(() => {
-    // Listen for Auth changes
-    const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
-        // If logged in via Google, we use that profle
-        // If they were already logged in via our custom UI, we try to match
-        const savedUser = localStorage.getItem('aoh_user');
-        if (savedUser) {
-          const parsed = JSON.parse(savedUser);
-          if (parsed.email === fbUser.email) {
-            setCurrentUser(parsed);
-          } else {
-            // Google user different from saved user, use Google profile
-            const [first, ...rest] = (fbUser.displayName || '').split(' ');
-            const newUser = {
-              firstName: first || 'User',
-              lastName: rest.join(' ') || '',
-              email: fbUser.email || '',
-              pin: 'GOOGLE'
-            };
-            setCurrentUser(newUser);
-            localStorage.setItem('aoh_user', JSON.stringify(newUser));
-          }
-        } else {
-           const [first, ...rest] = (fbUser.displayName || '').split(' ');
-           const newUser = {
-             firstName: first || 'User',
-             lastName: rest.join(' ') || '',
-             email: fbUser.email || '',
-             pin: 'GOOGLE'
-           };
-           setCurrentUser(newUser);
-           localStorage.setItem('aoh_user', JSON.stringify(newUser));
+    // Ensure we have an anonymous session for Firestore connectivity
+    const initAuth = async () => {
+      if (!auth.currentUser) {
+        try {
+          await signInAnonymously(auth);
+        } catch (error) {
+          console.error("Auth initialization error:", error);
         }
-      } else {
-        setCurrentUser(null);
-        localStorage.removeItem('aoh_user');
+      }
+    };
+    initAuth();
+
+    // Listen for Auth changes (for our internal session management)
+    const unsubscribeAuth = onAuthStateChanged(auth, (fbUser) => {
+      if (!fbUser) {
+        // If auth is lost, clear local user if it was a deep link or something
+        // but generally we keep our 'currentUser' state based on the form
       }
     });
 
@@ -105,18 +90,6 @@ export default function App() {
       handleFirestoreError(error, OperationType.LIST, 'bookings');
     });
 
-    const savedPin = localStorage.getItem('aoh_admin_pin');
-    const defaultUsers = {
-      'staff@iltexas.org': { firstName: 'Staff', lastName: 'Member', email: 'staff@iltexas.org', pin: '6601' },
-      'admin@iltexas.org': { firstName: 'Admin', lastName: 'User', email: 'admin@iltexas.org', pin: '7324' }
-    };
-    
-    const savedUsers = localStorage.getItem('aoh_users');
-    const combinedUsers = savedUsers ? { ...defaultUsers, ...JSON.parse(savedUsers) } : defaultUsers;
-    setAllUsers(combinedUsers);
-    
-    if (savedPin) setAdminPin(savedPin);
-
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => {
       unsubscribeAuth();
@@ -125,25 +98,9 @@ export default function App() {
     };
   }, []);
 
-  // Sync users to Firestore (optional but good for persistence)
-  useEffect(() => {
-    if (Object.keys(allUsers).length > 0) {
-      localStorage.setItem('aoh_users', JSON.stringify(allUsers));
-    }
-  }, [allUsers]);
-
   useEffect(() => {
     localStorage.setItem('aoh_admin_pin', adminPin);
   }, [adminPin]);
-
-  const signInWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Google Sign-in error:", error);
-    }
-  };
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -151,28 +108,20 @@ export default function App() {
     const firstName = formData.get('firstName') as string;
     const lastName = formData.get('lastName') as string;
     const email = formData.get('email') as string;
-    const pin = formData.get('pin') as string;
 
-    if (!firstName || !lastName || !email || !pin) return;
+    if (!firstName || !lastName || !email) return;
 
-    // Check PIN logic
-    if (allUsers[email]) {
-      if (allUsers[email].pin !== pin) {
-        alert("Incorrect PIN for this email.");
-        return;
+    const user: User = { firstName, lastName, email, pin: 'VERIFIED' };
+    
+    // Ensure we are signed in anonymously to interact with Firestore
+    if (!auth.currentUser) {
+      try {
+        await signInAnonymously(auth);
+      } catch (error) {
+        console.error("Auth error:", error);
       }
-    } else {
-      setAllUsers(prev => ({ ...prev, [email]: { firstName, lastName, email, pin } }));
     }
 
-    // For real sync, we need an auth context. 
-    // We'll use the user's email to simulate auth if they don't want Google.
-    // However, Firestore rules need request.auth.
-    // If they want sync, they MUST use Google or I must implement anonymous/email auth.
-    // I'll show a message or just trigger Google sign in.
-    alert("To enable real-time synchronization across devices, please use 'Sign in with Google' instead. This PIN login only works on this browser.");
-    
-    const user: User = { firstName, lastName, email, pin };
     setCurrentUser(user);
     localStorage.setItem('aoh_user', JSON.stringify(user));
   };
@@ -208,7 +157,12 @@ export default function App() {
   const addBooking = async (roomId: number, date: string, editId?: string) => {
     if (!currentUser) return;
     if (!auth.currentUser) {
-      alert("You must be signed in with Google to make a reservation.");
+      alert("System initializing... please try again in a second.");
+      return;
+    }
+
+    if (!bookingPurpose.trim()) {
+      alert("Please provide a purpose for the reservation.");
       return;
     }
 
@@ -282,22 +236,15 @@ export default function App() {
                 <h2 className="text-xs font-black uppercase tracking-widest text-navy opacity-70">Staff Sign In</h2>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Input name="firstName" placeholder="First Name" required />
-                <Input name="lastName" placeholder="Last Name" required />
+                <Input name="firstName" label="First Name" placeholder="First Name" required />
+                <Input name="lastName" label="Last Name" placeholder="Last Name" required />
               </div>
-              <Input name="email" type="email" placeholder="you@iltexas.org" required />
-              <Input name="pin" type="password" placeholder="Staff PIN (e.g. 6601)" maxLength={6} required />
+              <Input name="email" type="email" label="Email Address" placeholder="you@iltexas.org" required />
               
-              <div className="grid grid-cols-1 gap-2">
-                <Button type="submit" className="w-full">
-                  <LogIn className="w-5 h-5" />
-                  Sign In
-                </Button>
-                <Button type="button" variant="outline" className="w-full bg-white border-gray-200 text-gray-700 hover:bg-gray-50" onClick={signInWithGoogle}>
-                  <Mail className="w-5 h-5 text-gray-400" />
-                  Sign In with Google
-                </Button>
-              </div>
+              <Button type="submit" className="w-full py-6">
+                <LogIn className="w-5 h-5" />
+                Sign In to Dashboard
+              </Button>
             </form>
 
             <div className="relative">
@@ -450,8 +397,8 @@ export default function App() {
                         <p className="text-[10px] uppercase font-bold text-white/40">Total Bookings</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-2xl font-black">{Object.keys(allUsers).length}</p>
-                        <p className="text-[10px] uppercase font-bold text-white/40">Registered Users</p>
+                        <p className="text-2xl font-black">10</p>
+                        <p className="text-[10px] uppercase font-bold text-white/40">Total Rooms</p>
                       </div>
                     </div>
                   </div>
@@ -513,7 +460,18 @@ export default function App() {
                     .sort((a, b) => a.date.localeCompare(b.date))
                     .map((booking) => (
                       <tr key={booking.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4 font-bold text-navy">{formatDisplayDate(new Date(booking.date + "T12:00:00"))}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="text-[13px] font-bold text-navy">
+                              {formatDisplayDate(new Date(booking.date + "T12:00:00"))}
+                            </span>
+                            <span className="text-[10px] text-gray-400 font-medium">
+                              Req: {booking.createdAt && typeof booking.createdAt.toDate === 'function' 
+                                ? format(booking.createdAt.toDate(), 'MMM d, yyyy') 
+                                : 'Recent'}
+                            </span>
+                          </div>
+                        </td>
                         <td className="px-6 py-4">
                           <div className="flex flex-col">
                             <span className="font-semibold text-gray-900">{booking.firstName} {booking.lastName}</span>
@@ -712,13 +670,10 @@ interface RoomCardProps {
   onBook: () => void;
 }
 
-const RoomCard: React.FC<RoomCardProps> = ({ id, name, bookings, onBook }) => {
+const RoomCard: React.FC<RoomCardProps> = ({ name, bookings, onBook }) => {
   const now = new Date();
   const currentMonthDays = getMonthDays(now);
   const nextMonthDays = getNextMonthFirstWeek(now);
-  const todayStr = formatDateKey(now);
-
-  const hasBooking = bookings.some(b => b.date >= todayStr);
 
   return (
     <div className="bg-white rounded-2xl shadow-xl border border-gray-100 flex flex-col overflow-hidden hover:shadow-2xl transition-all duration-500 group">

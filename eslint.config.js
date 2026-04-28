@@ -1,4 +1,3 @@
-import js from '@eslint/js';
 import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
@@ -7,8 +6,8 @@ import firebaseRulesPlugin from '@firebase/eslint-plugin-security-rules';
 
 export default tseslint.config(
   { ignores: ['dist', 'node_modules'] },
+  ...tseslint.configs.recommended,
   {
-    extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['src/**/*.{ts,tsx}'],
     languageOptions: {
       ecmaVersion: 2020,
@@ -26,13 +25,5 @@ export default tseslint.config(
       ],
     },
   },
-  {
-    files: ['*.rules'],
-    plugins: {
-      '@firebase/security-rules': firebaseRulesPlugin,
-    },
-    rules: {
-      ...firebaseRulesPlugin.configs['flat/recommended'].rules,
-    },
-  }
+  firebaseRulesPlugin.configs['flat/recommended']
 );

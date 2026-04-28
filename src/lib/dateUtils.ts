@@ -1,4 +1,4 @@
-import { format, addMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, startOfWeek, endOfWeek, addDays, isPast } from 'date-fns';
+import { format, addMonths, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, addDays } from 'date-fns';
 
 export const getMonthDays = (date: Date) => {
   const start = startOfMonth(date);
@@ -29,7 +29,6 @@ export const isDateBookable = (date: Date) => {
   today.setHours(0, 0, 0, 0);
   
   // Within current month or first 7 days of next month
-  const startOfThisMonth = startOfMonth(new Date());
   const nextMonthRange = addDays(startOfMonth(addMonths(new Date(), 1)), 6);
   
   return date >= today && date <= nextMonthRange;

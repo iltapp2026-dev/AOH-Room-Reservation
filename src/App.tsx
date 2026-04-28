@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { User, Booking, ROOMS } from './types';
 import { format, isPast, isSameDay, isSameMonth } from 'date-fns';
-import { LogIn, ShieldCheck, LogOut, Settings, Calendar as CalendarIcon, User as UserIcon, Trash2, Edit2, CheckCircle2, ChevronRight, X } from 'lucide-react';
+import { LogIn, ShieldCheck, LogOut, Settings, Calendar as CalendarIcon, User as UserIcon, Trash2, Edit2, CheckCircle2, ChevronRight, X, Mail } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { getMonthDays, getNextMonthFirstWeek, formatDateKey, formatDisplayDate, formatFullDate, isDateBookable } from './lib/dateUtils';
+import { db, auth } from './lib/firebase';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp, query, orderBy, getDoc } from 'firebase/firestore';
+import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
+import { handleFirestoreError, OperationType } from './lib/firestoreUtils';
 
 // --- Components ---
 
@@ -50,42 +54,98 @@ export default function App() {
 
   // Initialization
   useEffect(() => {
-    const savedUser = localStorage.getItem('aoh_user');
-    const savedBookings = localStorage.getItem('aoh_bookings');
-    const savedUsers = localStorage.getItem('aoh_users');
-    const savedPin = localStorage.getItem('aoh_admin_pin');
+    // Listen for Auth changes
+    const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser) {
+        // If logged in via Google, we use that profle
+        // If they were already logged in via our custom UI, we try to match
+        const savedUser = localStorage.getItem('aoh_user');
+        if (savedUser) {
+          const parsed = JSON.parse(savedUser);
+          if (parsed.email === fbUser.email) {
+            setCurrentUser(parsed);
+          } else {
+            // Google user different from saved user, use Google profile
+            const [first, ...rest] = (fbUser.displayName || '').split(' ');
+            const newUser = {
+              firstName: first || 'User',
+              lastName: rest.join(' ') || '',
+              email: fbUser.email || '',
+              pin: 'GOOGLE'
+            };
+            setCurrentUser(newUser);
+            localStorage.setItem('aoh_user', JSON.stringify(newUser));
+          }
+        } else {
+           const [first, ...rest] = (fbUser.displayName || '').split(' ');
+           const newUser = {
+             firstName: first || 'User',
+             lastName: rest.join(' ') || '',
+             email: fbUser.email || '',
+             pin: 'GOOGLE'
+           };
+           setCurrentUser(newUser);
+           localStorage.setItem('aoh_user', JSON.stringify(newUser));
+        }
+      } else {
+        setCurrentUser(null);
+        localStorage.removeItem('aoh_user');
+      }
+    });
 
+    // Listen for Bookings
+    const q = query(collection(db, 'bookings'), orderBy('date', 'asc'));
+    const unsubscribeBookings = onSnapshot(q, (snapshot) => {
+      const bookings: Booking[] = [];
+      snapshot.forEach((doc) => {
+        bookings.push({ id: doc.id, ...doc.data() } as Booking);
+      });
+      setAllBookings(bookings);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'bookings');
+    });
+
+    const savedPin = localStorage.getItem('aoh_admin_pin');
     const defaultUsers = {
       'staff@iltexas.org': { firstName: 'Staff', lastName: 'Member', email: 'staff@iltexas.org', pin: '6601' },
       'admin@iltexas.org': { firstName: 'Admin', lastName: 'User', email: 'admin@iltexas.org', pin: '7324' }
     };
-
-    if (savedUser) setCurrentUser(JSON.parse(savedUser));
-    if (savedBookings) setAllBookings(JSON.parse(savedBookings));
     
+    const savedUsers = localStorage.getItem('aoh_users');
     const combinedUsers = savedUsers ? { ...defaultUsers, ...JSON.parse(savedUsers) } : defaultUsers;
     setAllUsers(combinedUsers);
     
     if (savedPin) setAdminPin(savedPin);
 
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
+    return () => {
+      unsubscribeAuth();
+      unsubscribeBookings();
+      clearInterval(timer);
+    };
   }, []);
 
-  // Save changes
+  // Sync users to Firestore (optional but good for persistence)
   useEffect(() => {
-    localStorage.setItem('aoh_bookings', JSON.stringify(allBookings));
-  }, [allBookings]);
-
-  useEffect(() => {
-    localStorage.setItem('aoh_users', JSON.stringify(allUsers));
+    if (Object.keys(allUsers).length > 0) {
+      localStorage.setItem('aoh_users', JSON.stringify(allUsers));
+    }
   }, [allUsers]);
 
   useEffect(() => {
     localStorage.setItem('aoh_admin_pin', adminPin);
   }, [adminPin]);
 
-  const handleLogin = (e: React.FormEvent<HTMLFormElement>) => {
+  const signInWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      console.error("Google Sign-in error:", error);
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const firstName = formData.get('firstName') as string;
@@ -95,23 +155,30 @@ export default function App() {
 
     if (!firstName || !lastName || !email || !pin) return;
 
-    const user: User = { firstName, lastName, email, pin };
-    
-    // Check if user exists and PIN matches
+    // Check PIN logic
     if (allUsers[email]) {
       if (allUsers[email].pin !== pin) {
         alert("Incorrect PIN for this email.");
         return;
       }
     } else {
-      setAllUsers(prev => ({ ...prev, [email]: user }));
+      setAllUsers(prev => ({ ...prev, [email]: { firstName, lastName, email, pin } }));
     }
 
+    // For real sync, we need an auth context. 
+    // We'll use the user's email to simulate auth if they don't want Google.
+    // However, Firestore rules need request.auth.
+    // If they want sync, they MUST use Google or I must implement anonymous/email auth.
+    // I'll show a message or just trigger Google sign in.
+    alert("To enable real-time synchronization across devices, please use 'Sign in with Google' instead. This PIN login only works on this browser.");
+    
+    const user: User = { firstName, lastName, email, pin };
     setCurrentUser(user);
     localStorage.setItem('aoh_user', JSON.stringify(user));
   };
 
   const handleLogout = () => {
+    signOut(auth);
     setCurrentUser(null);
     localStorage.removeItem('aoh_user');
     setShowAdminPanel(false);
@@ -138,31 +205,44 @@ export default function App() {
     }, 2800);
   };
 
-  const addBooking = (roomId: number, date: string, editId?: string) => {
+  const addBooking = async (roomId: number, date: string, editId?: string) => {
     if (!currentUser) return;
-
-    if (editId) {
-      setAllBookings(prev => prev.map(b => b.id === editId ? { ...b, roomId, date, purpose: bookingPurpose } : b));
-    } else {
-      const newBooking: Booking = {
-        id: Math.random().toString(36).substr(2, 9),
-        roomId,
-        date,
-        email: currentUser.email,
-        firstName: currentUser.firstName,
-        lastName: currentUser.lastName,
-        purpose: bookingPurpose,
-      };
-      setAllBookings(prev => [...prev, newBooking]);
+    if (!auth.currentUser) {
+      alert("You must be signed in with Google to make a reservation.");
+      return;
     }
 
-    setBookingModal(null);
-    setBookingPurpose('');
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 1500);
+    const bookingData = {
+      roomId,
+      date,
+      email: currentUser.email,
+      firstName: currentUser.firstName,
+      lastName: currentUser.lastName,
+      purpose: bookingPurpose,
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      if (editId) {
+        await updateDoc(doc(db, 'bookings', editId), bookingData);
+      } else {
+        const id = Math.random().toString(36).substr(2, 9);
+        await setDoc(doc(db, 'bookings', id), {
+          ...bookingData,
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      setBookingModal(null);
+      setBookingPurpose('');
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 1500);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, editId ? `bookings/${editId}` : 'bookings');
+    }
   };
 
-  const deleteBooking = (id: string, firstName: string, lastName: string, email: string) => {
+  const deleteBooking = async (id: string, firstName: string, lastName: string, email: string) => {
     const booking = allBookings.find(b => b.id === id);
     if (!booking) return;
 
@@ -171,8 +251,12 @@ export default function App() {
       booking.lastName.toLowerCase() === lastName.toLowerCase() &&
       booking.email.toLowerCase() === email.toLowerCase()
     ) {
-      setAllBookings(prev => prev.filter(b => b.id !== id));
-      setPendingDelete(null);
+      try {
+        await deleteDoc(doc(db, 'bookings', id));
+        setPendingDelete(null);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `bookings/${id}`);
+      }
     } else {
       alert("Verification details do not match.");
     }
@@ -204,10 +288,16 @@ export default function App() {
               <Input name="email" type="email" placeholder="you@iltexas.org" required />
               <Input name="pin" type="password" placeholder="Staff PIN (e.g. 6601)" maxLength={6} required />
               
-              <Button type="submit" className="w-full">
-                <LogIn className="w-5 h-5" />
-                Sign In
-              </Button>
+              <div className="grid grid-cols-1 gap-2">
+                <Button type="submit" className="w-full">
+                  <LogIn className="w-5 h-5" />
+                  Sign In
+                </Button>
+                <Button type="button" variant="outline" className="w-full bg-white border-gray-200 text-gray-700 hover:bg-gray-50" onClick={signInWithGoogle}>
+                  <Mail className="w-5 h-5 text-gray-400" />
+                  Sign In with Google
+                </Button>
+              </div>
             </form>
 
             <div className="relative">
@@ -404,11 +494,11 @@ export default function App() {
             <table className="w-full text-left">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Date</th>
-                  <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">User</th>
-                  <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Room</th>
-                  <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Purpose</th>
-                  <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-widest">Actions</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">Requesting date / date of use</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">User</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">Room</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">Purpose</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">

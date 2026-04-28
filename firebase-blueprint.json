@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "Booking": {
+      "title": "Booking",
+      "description": "A room reservation record.",
+      "type": "object",
+      "properties": {
+        "roomId": { "type": "integer" },
+        "date": { "type": "string", "format": "date" },
+        "email": { "type": "string", "format": "email" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "purpose": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["roomId", "date", "email", "firstName", "lastName"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile with PIN code for auth.",
+      "type": "object",
+      "properties": {
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "pin": { "type": "string" }
+      },
+      "required": ["firstName", "lastName", "email", "pin"]
+    }
+  },
+  "firestore": {
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Global room reservations."
+    },
+    "/users/{email}": {
+      "schema": "User",
+      "description": "User registry for login verification."
+    }
+  }
+}

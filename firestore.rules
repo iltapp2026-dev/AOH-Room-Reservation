@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.\\@]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isAdmin() {
+      // In this app, we'll restrict admin access to a specific email or by checking a document
+      // For simplicity and following the blueprint, let's assume admin@iltexas.org is the super admin
+      return isSignedIn() && (request.auth.token.email == 'admin@iltexas.org' || request.auth.token.email == 'iltapp2026@gmail.com');
+    }
+
+    // --- User Rules ---
+    match /users/{email} {
+      function isValidUser(data) {
+        return data.keys().hasAll(['firstName', 'lastName', 'email', 'pin']) &&
+               data.keys().size() == 4 &&
+               data.firstName is string && data.firstName.size() <= 100 &&
+               data.lastName is string && data.lastName.size() <= 100 &&
+               data.email == email &&
+               data.pin is string && data.pin.size() >= 4 && data.pin.size() <= 6;
+      }
+
+      allow get: if isSignedIn(); // Allow checking if user exists for login
+      allow create: if isSignedIn() && isValidUser(incoming());
+      allow update: if isSignedIn() && 
+                    (request.auth.token.email == email || isAdmin()) && 
+                    isValidUser(incoming()) &&
+                    incoming().email == existing().email;
+    }
+
+    // --- Booking Rules ---
+    match /bookings/{bookingId} {
+      function isValidBooking(data) {
+        return data.keys().hasAll(['roomId', 'date', 'email', 'firstName', 'lastName']) &&
+               // Required fields
+               data.roomId is int && data.roomId >= 0 && data.roomId < 10 &&
+               data.date is string && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+               data.email is string && data.email.size() <= 128 &&
+               data.firstName is string && data.firstName.size() <= 100 &&
+               data.lastName is string && data.lastName.size() <= 100 &&
+               // Identity verification: The email in the booking must match the requester
+               (data.email == request.auth.token.email || isAdmin()) &&
+               // Optional purpose
+               (!data.keys().hasAny(['purpose']) || (data.purpose is string && data.purpose.size() <= 500)) &&
+               // Metadata
+               (!data.keys().hasAny(['createdAt']) || data.createdAt == request.time) &&
+               (!data.keys().hasAny(['updatedAt']) || data.updatedAt == request.time);
+      }
+
+      allow list: if isSignedIn(); // Everyone can see bookings to know availability
+      allow get: if isSignedIn();
+      
+      allow create: if isSignedIn() && 
+                    isValidId(bookingId) && 
+                    isValidBooking(incoming()) &&
+                    incoming().createdAt == request.time;
+
+      allow update: if isSignedIn() && 
+                    isValidBooking(incoming()) &&
+                    (incoming().email == request.auth.token.email || isAdmin()) &&
+                    incoming().email == existing().email &&
+                    incoming().date == existing().date &&
+                    incoming().roomId == existing().roomId &&
+                    incoming().updatedAt == request.time;
+
+      allow delete: if isSignedIn() && 
+                    (existing().email == request.auth.token.email || isAdmin());
+    }
+  }
+}

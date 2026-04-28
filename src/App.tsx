@@ -460,7 +460,8 @@ export default function App() {
             <table className="w-full text-left">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">Requesting date / date of use</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">Requested On</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">Date of Use</th>
                   <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">User</th>
                   <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">Room</th>
                   <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest">Purpose</th>
@@ -470,7 +471,7 @@ export default function App() {
               <tbody className="divide-y divide-gray-100">
                 {allBookings.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-gray-400 font-medium italic">
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-400 font-medium italic">
                       No active reservations found.
                     </td>
                   </tr>
@@ -479,17 +480,13 @@ export default function App() {
                     .sort((a, b) => a.date.localeCompare(b.date))
                     .map((booking) => (
                       <tr key={booking.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col">
-                            <span className="text-[13px] font-bold text-navy">
-                              {formatDisplayDate(new Date(booking.date + "T12:00:00"))}
-                            </span>
-                            <span className="text-[10px] text-gray-400 font-medium">
-                              Req: {booking.createdAt && typeof booking.createdAt.toDate === 'function' 
-                                ? format(booking.createdAt.toDate(), 'MMM d, yyyy') 
-                                : 'Recent'}
-                            </span>
-                          </div>
+                        <td className="px-6 py-4 text-[11px] text-gray-400 font-medium whitespace-nowrap">
+                          {booking.createdAt && typeof booking.createdAt.toDate === 'function' 
+                            ? format(booking.createdAt.toDate(), 'MMM d, yyyy') 
+                            : 'Recent'}
+                        </td>
+                        <td className="px-6 py-4 text-[13px] font-bold text-navy whitespace-nowrap">
+                          {formatDisplayDate(new Date(booking.date + "T12:00:00"))}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex flex-col">

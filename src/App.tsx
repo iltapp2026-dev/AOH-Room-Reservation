@@ -56,6 +56,7 @@ export default function App() {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [bookingPurpose, setBookingPurpose] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Initialization
   useEffect(() => {
@@ -196,6 +197,7 @@ export default function App() {
       updatedAt: serverTimestamp(),
     };
 
+    setIsSubmitting(true);
     try {
       if (editId) {
         await updateDoc(doc(db, 'bookings', editId), bookingData);
@@ -213,26 +215,61 @@ export default function App() {
       setTimeout(() => setShowSuccess(false), 1500);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, editId ? `bookings/${editId}` : 'bookings');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const deleteBooking = async (id: string, firstName: string, lastName: string, email: string) => {
+    if (!currentUser) return;
     const booking = allBookings.find(b => b.id === id);
     if (!booking) return;
 
+    // Ensure we have an auth session for deletion if rules require isSignedIn()
+    if (!auth.currentUser) {
+      try {
+        await signInAnonymously(auth);
+      } catch (error: unknown) {
+        const fbError = error as { code?: string };
+        if (fbError.code === 'auth/admin-restricted-operation') {
+          alert("Database Access Error: Anonymous Authentication must be enabled in the Firebase Console (Authentication > Sign-in method) to allow cancelling reservations.");
+          return;
+        }
+      }
+    }
+
+    const isAdminLocal = currentUser.email === 'admin@iltexas.org' || currentUser.email === 'iltapp2026@gmail.com';
+
     if (
-      booking.firstName.toLowerCase() === firstName.toLowerCase() &&
-      booking.lastName.toLowerCase() === lastName.toLowerCase() &&
-      booking.email.toLowerCase() === email.toLowerCase()
+      isAdminLocal ||
+      (booking.firstName.toLowerCase().trim() === firstName.toLowerCase().trim() &&
+       booking.lastName.toLowerCase().trim() === lastName.toLowerCase().trim() &&
+       booking.email.toLowerCase().trim() === email.toLowerCase().trim())
     ) {
       try {
         await deleteDoc(doc(db, 'bookings', id));
         setPendingDelete(null);
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 2000);
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, `bookings/${id}`);
       }
     } else {
-      alert("Verification details do not match.");
+      alert("Verification details do not match the original reservation.");
+    }
+  };
+
+  const resetDatabase = async () => {
+    if (!confirm("ARE YOU SURE? This will PERMANENTLY DELETE ALL reservations for all users/rooms. You cannot undo this.")) return;
+    
+    try {
+      // Note: We delete documents one by one because client-side bulk delete isn't native for entire collections
+      const deletePromises = allBookings.map(booking => deleteDoc(doc(db, 'bookings', booking.id)));
+      await Promise.all(deletePromises);
+      alert("Database reset successful.");
+    } catch (error) {
+      alert("Error resetting database. Check console for details.");
+      console.error(error);
     }
   };
 
@@ -422,6 +459,18 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                  <div className="bg-white/5 p-6 rounded-lg border border-red-500/20">
+                    <h4 className="font-bold mb-4 uppercase text-xs tracking-widest text-red-400">Danger Zone</h4>
+                    <div className="space-y-4">
+                      <p className="text-[11px] text-white/60">Permanently delete all reservations. This cannot be undone.</p>
+                      <button 
+                        onClick={resetDatabase}
+                        className="w-full bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/50 py-2 rounded-lg font-bold text-xs transition-all"
+                      >
+                        Factory Reset Reservations
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </motion.section>
@@ -438,7 +487,7 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {ROOMS.map((name, idx) => (
               <RoomCard 
-                key={name}
+                key={`room-${idx}-${name}`}
                 id={idx}
                 name={name}
                 bookings={allBookings.filter(b => b.roomId === idx)}
@@ -506,7 +555,7 @@ export default function App() {
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          {(booking.email === currentUser.email || currentUser.email === 'admin@iltexas.org') ? (
+                          {(booking.email === currentUser.email || currentUser.email === 'admin@iltexas.org' || currentUser.email === 'iltapp2026@gmail.com') ? (
                             <div className="flex items-center gap-2">
                               <button 
                                 onClick={() => {
@@ -520,11 +569,7 @@ export default function App() {
                               </button>
                               <button 
                                 onClick={() => {
-                                  if (currentUser.email === 'admin@iltexas.org') {
-                                    setAllBookings(prev => prev.filter(b => b.id !== booking.id));
-                                  } else {
-                                    setPendingDelete(booking.id);
-                                  }
+                                  setPendingDelete(booking.id);
                                 }}
                                 className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                               >
@@ -625,15 +670,19 @@ export default function App() {
                   <Button 
                     variant="primary" 
                     className="w-full py-6 text-base shadow-xl"
-                    disabled={!selectedDate || !bookingPurpose.trim()}
+                    disabled={!selectedDate || !bookingPurpose.trim() || isSubmitting}
                     onClick={() => {
                       if (selectedDate) {
                         addBooking(bookingModal.roomId, selectedDate, bookingModal.editId);
                       }
                     }}
                   >
-                    <CheckCircle2 className="w-5 h-5" />
-                    {bookingModal.editId ? 'Save Changes' : 'Confirm Reservation'}
+                    {isSubmitting ? (
+                      <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-5 h-5" />
+                    )}
+                    {isSubmitting ? 'Processing...' : (bookingModal.editId ? 'Save Changes' : 'Confirm Reservation')}
                   </Button>
                 </div>
               </div>
@@ -652,26 +701,34 @@ export default function App() {
                 <LogOut className="rotate-180" />
                 Confirm Cancellation
               </h3>
-              <p className="text-gray-600 mb-6">To cancel this reservation, please re-enter your details for verification.</p>
+              <p className="text-gray-600 mb-6">To cancel this reservation, please confirm your choice.</p>
               
               <form onSubmit={(e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
                 deleteBooking(
                   pendingDelete,
-                  formData.get('f') as string,
-                  formData.get('l') as string,
-                  formData.get('e') as string
+                  (formData.get('f') as string) || '',
+                  (formData.get('l') as string) || '',
+                  (formData.get('e') as string) || ''
                 );
               }} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <Input name="f" placeholder="First Name" required />
-                  <Input name="l" placeholder="Last Name" required />
-                </div>
-                <Input name="e" placeholder="Email Address" type="email" required />
+                {(currentUser.email === 'admin@iltexas.org' || currentUser.email === 'iltapp2026@gmail.com') ? (
+                  <div className="bg-blue-50 p-4 rounded-lg text-blue-700 text-sm mb-4">
+                    Admin bypass active: No verification details required.
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Input name="f" placeholder="First Name" required />
+                      <Input name="l" placeholder="Last Name" required />
+                    </div>
+                    <Input name="e" placeholder="Email Address" type="email" required />
+                  </>
+                )}
                 <div className="flex gap-3 pt-2">
                   <Button type="button" variant="ghost" onClick={() => setPendingDelete(null)} className="flex-1">Nevermind</Button>
-                  <Button variant="danger" className="flex-1">Cancel It</Button>
+                  <Button variant="danger" className="flex-1">Confirm Cancellation</Button>
                 </div>
               </form>
             </motion.div>
@@ -708,7 +765,7 @@ interface RoomCardProps {
   onBook: () => void;
 }
 
-const RoomCard: React.FC<RoomCardProps> = ({ name, bookings, onBook }) => {
+const RoomCard: React.FC<RoomCardProps> = ({ id, name, bookings, onBook }) => {
   const now = new Date();
   const currentMonthDays = getMonthDays(now);
   const nextMonthDays = getNextMonthFirstWeek(now);
@@ -724,7 +781,7 @@ const RoomCard: React.FC<RoomCardProps> = ({ name, bookings, onBook }) => {
         <div className="flex-1">
           <div className="grid grid-cols-7 gap-1.5 text-[9px] font-bold mb-4">
             {['M','T','W','T','F','S','S'].map((d, i) => (
-              <div key={`${d}-${i}`} className="text-[#A2ABB8] text-center">{d}</div>
+              <div key={`header-${id}-${d}-${i}`} className="text-[#A2ABB8] text-center">{d}</div>
             ))}
           </div>
 
@@ -738,7 +795,7 @@ const RoomCard: React.FC<RoomCardProps> = ({ name, bookings, onBook }) => {
 
               return (
                 <div 
-                  key={i} 
+                  key={`day-${dKey}-${i}`} 
                   className={cn(
                     "aspect-square border border-gray-50 flex flex-col items-center justify-center transition-all relative overflow-hidden rounded-sm",
                     !currentMonth ? "opacity-30" : "bg-white",
@@ -842,7 +899,7 @@ function BookingCalendar({ roomId, currentBookings, selectedDate, onSelect }: { 
 
       <div className="grid grid-cols-7 gap-1.5 mb-3">
         {['MON','TUE','WED','THU','FRI','SAT','SUN'].map((d, i) => (
-          <div key={i} className="text-center text-[8px] font-black uppercase tracking-widest text-gray-400 opacity-60">{d}</div>
+          <div key={`cal-header-${d}-${i}`} className="text-center text-[8px] font-black uppercase tracking-widest text-gray-400 opacity-60">{d}</div>
         ))}
       </div>
 
@@ -855,11 +912,11 @@ function BookingCalendar({ roomId, currentBookings, selectedDate, onSelect }: { 
           const isToday = isSameDay(day, now);
           const isCurrentMonth = isSameMonth(day, viewDate);
 
-          if (!isCurrentMonth) return <div key={i} />;
+          if (!isCurrentMonth) return <div key={`empty-${i}`} />;
 
           return (
             <button
-              key={i}
+              key={`cal-day-${dKey}`}
               disabled={!bookable || booked}
               onClick={() => onSelect(dKey)}
               className={cn(

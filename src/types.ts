@@ -16,10 +16,10 @@ export interface Booking {
 }
 
 export const ROOMS = [
-  'CONFERENCE ROOM 1',
-  'CONFERENCE ROOM 2',
-  'CONFERENCE ROOM 3',
-  'CONFERENCE ROOM 4'
+  'Conference Room 1',
+  'Conference Room 2',
+  'Conference Room 3',
+  'Conference Room 4'
 ];
 
 export const COLORS = {

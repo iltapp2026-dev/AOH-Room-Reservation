@@ -45,7 +45,17 @@ const Input = ({ label, required, error, ...props }: React.InputHTMLAttributes<H
 // --- Main App Logic ---
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    const savedUser = localStorage.getItem('aoh_user');
+    if (savedUser) {
+      try {
+        return JSON.parse(savedUser);
+      } catch (e) {
+        console.error("Failed to restore user:", e);
+      }
+    }
+    return null;
+  });
   const [allBookings, setAllBookings] = useState<Booking[]>([]);
   const [adminPin, setAdminPin] = useState(() => localStorage.getItem('aoh_admin_pin') || '7324');
   const [showAdminPanel, setShowAdminPanel] = useState(false);
@@ -59,18 +69,7 @@ export default function App() {
   const [bookingPurpose, setBookingPurpose] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Initialization
   useEffect(() => {
-    // Restore user from locale storage
-    const savedUser = localStorage.getItem('aoh_user');
-    if (savedUser) {
-      try {
-        setCurrentUser(JSON.parse(savedUser));
-      } catch (e) {
-        console.error("Failed to restore user:", e);
-      }
-    }
-
     const initAuth = async () => {
       // If we don't have a user, try to sign in anonymously
       // This is required for Firestore to allow writes under the 'isSignedIn()' rule
@@ -665,7 +664,9 @@ export default function App() {
                   <h3 className="text-base font-black text-navy uppercase tracking-widest">
                     {bookingModal.editId ? 'Edit Reservation' : 'Room Reservation'}
                   </h3>
-                  <p className="text-[10px] font-black text-maroon uppercase tracking-[0.2em]">{ROOMS[bookingModal.roomId]}</p>
+                  <p className="text-[11px] font-black text-maroon tracking-widest leading-relaxed">
+                    {ROOMS[bookingModal.roomId]}
+                  </p>
                 </div>
                 <button onClick={() => setBookingModal(null)} className="p-1.5 hover:bg-gray-200 rounded-full text-gray-400 transition-colors">
                   <X className="w-4 h-4" />
@@ -902,7 +903,7 @@ const RoomCard: React.FC<RoomCardProps> = ({ id, name, bookings, onBook }) => {
           </div>
           <div className="text-left leading-tight">
             <p className="text-[9px] font-black uppercase tracking-[0.2em] text-[#A2ABB8] group-hover/btn:text-white/60">Schedule Room</p>
-            <h5 className="text-[12px] font-black text-navy uppercase tracking-widest group-hover/btn:text-white truncate max-w-[150px]">{name}</h5>
+            <h5 className="text-[12px] font-bold text-navy group-hover/btn:text-white leading-tight pr-2">{name}</h5>
           </div>
         </div>
         <div className="w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center group-hover/btn:border-white/30 group-hover/btn:translate-x-1 transition-all">
